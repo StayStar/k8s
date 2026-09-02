@@ -2,7 +2,7 @@ pipeline {
   agent any
 
   environment {
-    DOCKERHUB_NAMESPACE = 'REPLACE_WITH_YOUR_DOCKERHUB_USERNAME'
+    DOCKERHUB_NAMESPACE = 'staystar'
     IMAGE_TAG = "${BUILD_NUMBER}"
   }
 
@@ -15,8 +15,8 @@ pipeline {
 
     stage('Build Images') {
       steps {
-        sh 'docker build -t $DOCKERHUB_NAMESPACE/k8s-demo-backend:$IMAGE_TAG backend'
-        sh 'docker build -t $DOCKERHUB_NAMESPACE/k8s-demo-frontend:$IMAGE_TAG frontend'
+        sh 'docker build -t $DOCKERHUB_NAMESPACE/fullstack-backend:$IMAGE_TAG backend'
+        sh 'docker build -t $DOCKERHUB_NAMESPACE/fullstack-frontend:$IMAGE_TAG frontend'
       }
     }
 
@@ -24,8 +24,8 @@ pipeline {
       steps {
         withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_TOKEN')]) {
           sh 'echo "$DOCKER_TOKEN" | docker login --username "$DOCKER_USER" --password-stdin'
-          sh 'docker push $DOCKERHUB_NAMESPACE/k8s-demo-backend:$IMAGE_TAG'
-          sh 'docker push $DOCKERHUB_NAMESPACE/k8s-demo-frontend:$IMAGE_TAG'
+          sh 'docker push $DOCKERHUB_NAMESPACE/fullstack-backend:$IMAGE_TAG'
+          sh 'docker push $DOCKERHUB_NAMESPACE/fullstack-frontend:$IMAGE_TAG'
           sh 'docker logout'
         }
       }
@@ -48,8 +48,8 @@ pipeline {
               --dry-run=client -o yaml | kubectl apply -f -
             kubectl apply -f k8s/mysql-pv-pvc.yaml -f k8s/mysql.yaml
             kubectl apply -f k8s/backend.yaml -f k8s/frontend.yaml -f k8s/ingress.yaml
-            kubectl -n app set image deployment/backend backend="$DOCKERHUB_NAMESPACE/k8s-demo-backend:$IMAGE_TAG"
-            kubectl -n app set image deployment/frontend frontend="$DOCKERHUB_NAMESPACE/k8s-demo-frontend:$IMAGE_TAG"
+            kubectl -n app set image deployment/backend backend="$DOCKERHUB_NAMESPACE/fullstack-backend:$IMAGE_TAG"
+            kubectl -n app set image deployment/frontend frontend="$DOCKERHUB_NAMESPACE/fullstack-frontend:$IMAGE_TAG"
             kubectl -n app rollout status deployment/mysql --timeout=180s
             kubectl -n app rollout status deployment/backend --timeout=180s
             kubectl -n app rollout status deployment/frontend --timeout=180s

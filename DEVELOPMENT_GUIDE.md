@@ -153,7 +153,7 @@ Kubernetes 创建新的 Pod
 
 ### 5.1 当前阶段：先不要租三台
 
-现在还没有前端、后端、Docker 镜像和 Kubernetes 配置。此时立即租服务器，会在代码未稳定时同时承担服务器费用和环境排障成本。
+当前已经具备前端、后端、Docker Compose 和 Kubernetes 配置，并已完成本地 Compose 验证。此时仍不建议立即租服务器，应先完成镜像名称统一和 Jenkins 镜像推送，避免把应用问题与集群问题同时排查。
 
 先在本地完成以下准备：
 
@@ -560,14 +560,14 @@ README 或提交文档必须包含：
 
 ## 13. 当前下一步
 
-当前仓库只有题目材料，还没有业务代码。建议执行顺序是：
+当前仓库已经包含业务代码、Dockerfile、Jenkinsfile 和 Kubernetes 配置，且 GitHub 与 Docker Hub 应用仓库已经准备好。建议执行顺序是：
 
 ```text
-1. 先按本文档建立 frontend、backend、k8s 的项目骨架。
-2. 本地完成前端、后端和数据库的最小业务闭环。
-3. 再租三台香港云服务器。
-4. 在服务器上完成 Kubernetes、NFS、Jenkins 和数据库。
-5. 部署应用并完成 CI/CD。
+1. 创建 staystar/fullstack-jenkins 镜像仓库。
+2. 本地确认 frontend、backend 和 Jenkins 镜像都能构建。
+3. 租三台香港云服务器并完成 Kubernetes、NFS、Jenkins 和数据库部署。
+4. 在 Jenkins 中配置 Docker Hub、Kubeconfig 和数据库凭据。
+5. 触发 Pipeline，完成镜像推送、应用部署和滚动更新。
 6. 按验收脚本截图并整理提交材料。
 ```
 

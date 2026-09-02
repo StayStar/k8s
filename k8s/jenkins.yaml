@@ -60,7 +60,7 @@ spec:
         kubernetes.io/hostname: master
       containers:
         - name: jenkins
-          image: DOCKERHUB_USER/k8s-demo-jenkins:latest
+          image: staystar/fullstack-jenkins:latest
           imagePullPolicy: Always
           ports:
             - name: http

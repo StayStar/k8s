@@ -80,18 +80,19 @@ npm --prefix backend run check
 
 ## 5. Docker 镜像
 
-登录 Docker Hub 后创建两个公开仓库：
+登录 Docker Hub 后创建三个公开仓库：
 
 ```text
-你的用户名/k8s-demo-frontend
-你的用户名/k8s-demo-backend
+staystar/fullstack-frontend
+staystar/fullstack-backend
+staystar/fullstack-jenkins
 ```
 
 本地构建示例：
 
 ```bash
-docker build -t 你的用户名/k8s-demo-frontend:latest frontend
-docker build -t 你的用户名/k8s-demo-backend:latest backend
+docker build -t staystar/fullstack-frontend:latest frontend
+docker build -t staystar/fullstack-backend:latest backend
 ```
 
 Kubernetes 只能运行镜像，因此发布顺序是：
@@ -154,11 +155,11 @@ kubectl apply -f k8s/frontend.yaml
 kubectl apply -f k8s/ingress.yaml
 ```
 
-首次部署前，把 `k8s/backend.yaml` 和 `k8s/frontend.yaml` 中的 `DOCKERHUB_USER` 替换成实际 Docker Hub 用户名。也可以先应用 YAML，再使用：
+应用 YAML 前，确认镜像地址使用 `staystar/fullstack-backend` 和 `staystar/fullstack-frontend`。也可以先应用 YAML，再使用：
 
 ```bash
-kubectl -n app set image deployment/backend backend=你的用户名/k8s-demo-backend:latest
-kubectl -n app set image deployment/frontend frontend=你的用户名/k8s-demo-frontend:latest
+kubectl -n app set image deployment/backend backend=staystar/fullstack-backend:latest
+kubectl -n app set image deployment/frontend frontend=staystar/fullstack-frontend:latest
 ```
 
 检查状态：
@@ -183,15 +184,16 @@ kubectl get pvc -n app
 
 ```text
 REPLACE_WITH_MASTER_PRIVATE_IP
-DOCKERHUB_USER
 ```
 
 先构建并推送 Jenkins 控制器镜像：
 
 ```bash
-docker build -t 你的用户名/k8s-demo-jenkins:latest jenkins
-docker push 你的用户名/k8s-demo-jenkins:latest
+docker build --platform linux/amd64 -t staystar/fullstack-jenkins:latest jenkins
+docker push staystar/fullstack-jenkins:latest
 ```
+
+如果从 Apple Silicon Mac 为常见的 x86_64/amd64 云服务器手动构建应用镜像，也要加上 `--platform linux/amd64`。Jenkins 在目标服务器上构建时，使用构建节点自身的架构即可。
 
 然后部署 Jenkins：
 
@@ -225,7 +227,7 @@ kubeconfig             Secret file，目标 Kubernetes 集群的 kubeconfig
 修改 `Jenkinsfile` 中的：
 
 ```text
-DOCKERHUB_NAMESPACE = 'REPLACE_WITH_YOUR_DOCKERHUB_USERNAME'
+DOCKERHUB_NAMESPACE = 'staystar'
 ```
 
 然后创建 Pipeline 任务，选择“Pipeline script from SCM”，SCM 选择 Git，仓库填写 GitHub 地址，脚本路径填写 `Jenkinsfile`。第一次可以点击 `Build Now` 手动触发；Webhook 不是第一次成功部署的前置条件。

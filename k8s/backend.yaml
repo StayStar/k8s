@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: DOCKERHUB_USER/k8s-demo-backend:latest
+          image: staystar/fullstack-backend:latest
           ports:
             - name: http
               containerPort: 3000
@@ -65,4 +65,3 @@ spec:
     - name: http
       port: 3000
       targetPort: http
-
