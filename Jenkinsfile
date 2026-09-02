@@ -1,9 +1,14 @@
 pipeline {
   agent any
 
+  options {
+    skipDefaultCheckout(true)
+  }
+
   environment {
     DOCKERHUB_NAMESPACE = 'staystar'
     IMAGE_TAG = "${BUILD_NUMBER}"
+    KUBECONFIG = '/var/jenkins_home/.kube/config'
   }
 
   stages {
@@ -35,8 +40,7 @@ pipeline {
       steps {
         withCredentials([
           string(credentialsId: 'mysql-root-password', variable: 'MYSQL_ROOT_PASSWORD'),
-          string(credentialsId: 'mysql-app-password', variable: 'MYSQL_PASSWORD'),
-          file(credentialsId: 'kubeconfig', variable: 'KUBECONFIG')
+          string(credentialsId: 'mysql-app-password', variable: 'MYSQL_PASSWORD')
         ]) {
           sh '''
             kubectl apply -f k8s/namespace.yaml

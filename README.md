@@ -172,65 +172,17 @@ kubectl get ingress -n app
 kubectl get pvc -n app
 ```
 
-## 8. Jenkins
+## 8. Jenkins 自动初始化
 
-先在 Master 上准备 NFS 目录：
+不需要在 Jenkins 网页中手动安装插件、复制初始密码、创建 Credentials、上传 kubeconfig 或创建 Pipeline。`./scripts/deploy.sh` 会构建并推送 Jenkins 镜像，随后自动创建以下资源：
 
-```text
-/srv/nfs/jenkins
-```
+- Jenkins 管理员，账号和密码取自 `deployment/secrets.env`。
+- `dockerhub-creds`、`mysql-root-password` 和 `mysql-app-password` 凭据。
+- 名为 `fullstack-pipeline` 的 Pipeline，代码仓库和任务名均可在 `deployment/secrets.env` 修改。
+- 只使用 `jenkins` ServiceAccount 的集群内 kubeconfig；它不使用或保存 master 管理员 kubeconfig。
+- 首次 Pipeline 构建，并在脚本结束前确认结果为成功。
 
-部署前编辑 [`k8s/jenkins-pv-pvc.yaml`](k8s/jenkins-pv-pvc.yaml) 和 [`k8s/jenkins.yaml`](k8s/jenkins.yaml)，替换：
-
-```text
-REPLACE_WITH_MASTER_PRIVATE_IP
-```
-
-先构建并推送 Jenkins 控制器镜像：
-
-```bash
-docker build --platform linux/amd64 -t staystar/fullstack-jenkins:latest jenkins
-docker push staystar/fullstack-jenkins:latest
-```
-
-如果从 Apple Silicon Mac 为常见的 x86_64/amd64 云服务器手动构建应用镜像，也要加上 `--platform linux/amd64`。Jenkins 在目标服务器上构建时，使用构建节点自身的架构即可。
-
-然后部署 Jenkins：
-
-```bash
-kubectl apply -f k8s/jenkins.yaml
-kubectl apply -f k8s/jenkins-pv-pvc.yaml
-```
-
-Jenkins 会通过 NodePort `30080` 提供访问。初始密码获取方式：
-
-```bash
-kubectl exec -n jenkins deploy/jenkins -- \
-  cat /var/jenkins_home/secrets/initialAdminPassword
-```
-
-Jenkins 使用 PVC 保存 `/var/jenkins_home`。Jenkins 执行节点必须具备：
-
-- Docker CLI 和构建镜像能力。
-- `kubectl`。
-- 访问目标 Kubernetes 集群的凭据。
-
-在 Jenkins Credentials 中创建：
-
-```text
-dockerhub-creds       Username with password，密码填写 Docker Hub Access Token
-mysql-root-password   Secret text
-mysql-app-password    Secret text
-kubeconfig             Secret file，目标 Kubernetes 集群的 kubeconfig
-```
-
-修改 `Jenkinsfile` 中的：
-
-```text
-DOCKERHUB_NAMESPACE = 'staystar'
-```
-
-然后创建 Pipeline 任务，选择“Pipeline script from SCM”，SCM 选择 Git，仓库填写 GitHub 地址，脚本路径填写 `Jenkinsfile`。第一次可以点击 `Build Now` 手动触发；Webhook 不是第一次成功部署的前置条件。
+Jenkins 通过 NodePort `30081` 提供访问；`30080` 留给 NGINX Ingress 的应用入口。登录时使用 `JENKINS_ADMIN_USER` 和 `JENKINS_ADMIN_PASSWORD` 的值。Jenkins 使用 PVC 保存 `/var/jenkins_home`，在 Master 的 Docker Socket 上构建镜像，并以 Kubernetes RBAC 限定部署权限。
 
 Jenkinsfile 会执行：
 
@@ -267,3 +219,28 @@ kubectl get pvc -A
 - 演示结束后释放三台按量计费服务器，并检查云硬盘、快照和公网 IP 是否仍在计费。
 
 更完整的实施顺序和交付清单见 [`DEVELOPMENT_GUIDE.md`](DEVELOPMENT_GUIDE.md)。
+
+## 11. 三台 Ubuntu 一键部署
+
+项目提供 [`scripts/deploy.sh`](scripts/deploy.sh)，用于从本机通过 SSH 自动完成三台 Ubuntu 服务器的基础配置、Kubernetes、Calico、NFS、NGINX Ingress、Headlamp、Jenkins 和业务资源部署。它会先构建并推送 Linux `amd64` Jenkins 镜像，再自动初始化 Jenkins 管理员、凭据、Pipeline 和首次构建。脚本默认使用 Calico `v3.32.1`、Ingress-NGINX `controller-v1.15.1` 和 Headlamp `v0.44.0`。
+
+执行前请确认云平台安全组允许：三台服务器之间的 Kubernetes、Calico 和 NFS 内网流量；Master 对外开放 SSH `22`、Ingress `30080` 和 Jenkins `30081`。SSH 用户需要具备免密 `sudo` 权限。
+
+你只需要填写两个本地文件，它们已被 Git 忽略：
+
+```text
+deployment/hosts.env    三台服务器的公网/内网 IP 与 SSH 私钥路径；每个值都有中文说明和示例
+deployment/secrets.env  MySQL、Docker Hub、Jenkins 和 GitHub 的配置；每个值都有中文说明和示例
+```
+
+填写后运行：
+
+```bash
+cd /Users/weibin/Desktop/k8s_fullstack_assessment
+./scripts/deploy.sh --dry-run
+./scripts/deploy.sh
+```
+
+`--dry-run` 只检查本地配置，不会连接、构建镜像或修改服务器。正式执行会等待 Jenkins 首次构建成功；失败时脚本会明确退出并给出 Jenkins 任务地址。脚本默认使用 Kubernetes `v1.36`，如果软件源没有该小版本，可以设置 `K8S_MINOR` 为实际可用的同一版本系列。脚本不会自动执行 `kubeadm reset`，已存在的集群步骤会跳过。
+
+`hosts.env` 和 `secrets.env` 权限为 `600`，并已被 `.gitignore` 排除。不要把这两个文件、Docker Hub Token 或 SSH 私钥提交到 GitHub。Jenkins 当前通过 Master 上的 Docker Socket 构建镜像，因此 Master 会自动安装 Docker Engine。

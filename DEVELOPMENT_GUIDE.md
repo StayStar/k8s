@@ -264,14 +264,14 @@ Jenkins PV → Jenkins PVC → Jenkins Pod
 Jenkins 必须具备：
 
 - Namespace、Deployment、Service、PVC。
-- 管理员密码获取方式。
+- 自动创建的管理员账号和密码。
 - Pod 重启后任务和配置仍存在。
 - 构建 Docker 镜像和执行 Kubernetes 部署的权限。
-- Pipeline Library 参数预留位置。
+- 自动创建的 Pipeline 与 Docker Hub、MySQL 凭据。
 
-Jenkins 初始密码只在服务器或 Jenkins 凭据中使用，不提交到代码仓库。
+管理员密码、Docker Hub Token 和 MySQL 密码仅填写在被 Git 忽略的 `deployment/secrets.env`。脚本将它们写入 Kubernetes Secret，再由 Jenkins 启动脚本创建加密保存的 Jenkins Credentials；这些值不写入 Git 跟踪的 YAML。
 
-Pipeline Library 的 URL 由出题人后续提供。在 URL 未提供前，文档只预留配置项，不虚构地址。
+当前未配置 Pipeline Shared Library，因为题目未提供可用 URL。获得有效地址后再单独加入，避免引用不存在的依赖。
 
 ### 阶段 3：MySQL、Secret 和 PVC
 
@@ -331,7 +331,7 @@ Deploy Kubernetes YAML
 Wait For Rollout
 ```
 
-最初可以在 Jenkins 页面手动触发构建。Git Webhook 可以作为补充，不应成为第一次成功部署的前置条件。
+脚本首次部署会自动创建并触发 Pipeline，且等待构建成功。Git Webhook 是后续代码自动触发的可选增强，不是首次部署的前置条件。
 
 ## 7. 资源之间的依赖和启动顺序
 
@@ -532,7 +532,7 @@ README 或提交文档必须包含：
 | Kubernetes 题面版本不可用 | 记录实际版本和原因，不隐瞒差异 |
 | 香港镜像下载慢 | 提前测试网络，必要时记录失败原因并重试 |
 | 2C4G 资源紧张 | 保持单副本，先部署核心链路，减少无关服务 |
-| Jenkins 配置复杂 | 先手动构建成功，再补 Webhook |
+| Jenkins 配置复杂 | 通过镜像内启动脚本自动创建管理员、凭据和 Pipeline；脚本等待首次构建结果 |
 | 数据库 Pod 重启丢数据 | 检查 PVC 是否绑定、挂载路径是否正确 |
 | 前端跨域 | 使用同域名 `/api`，通过 Ingress 分流 |
 | 云费用持续增加 | 按量计费、设置提醒，结束后释放实例和附属资源 |
@@ -563,12 +563,26 @@ README 或提交文档必须包含：
 当前仓库已经包含业务代码、Dockerfile、Jenkinsfile 和 Kubernetes 配置，且 GitHub 与 Docker Hub 应用仓库已经准备好。建议执行顺序是：
 
 ```text
-1. 创建 staystar/fullstack-jenkins 镜像仓库。
-2. 本地确认 frontend、backend 和 Jenkins 镜像都能构建。
-3. 租三台香港云服务器并完成 Kubernetes、NFS、Jenkins 和数据库部署。
-4. 在 Jenkins 中配置 Docker Hub、Kubeconfig 和数据库凭据。
-5. 触发 Pipeline，完成镜像推送、应用部署和滚动更新。
-6. 按验收脚本截图并整理提交材料。
+1. 填写 `deployment/hosts.env` 中的三台服务器地址和 SSH 私钥路径。
+2. 填写 `deployment/secrets.env` 中的 MySQL 密码、Docker Hub Token 和 Jenkins 管理员信息。
+3. 执行 `./scripts/deploy.sh --dry-run`。
+4. 执行 `./scripts/deploy.sh`，等待首次 Pipeline 构建成功。
+5. 按验收脚本截图并整理提交材料。
 ```
+
+### 13.1 一键部署脚本
+
+仓库中的 `scripts/deploy.sh` 可以从 Mac 通过 SSH 自动执行三台 Ubuntu 服务器的部署。它会构建并推送 Jenkins 镜像，设置主机名、安装 containerd 和 Kubernetes、初始化 master、加入两个 worker、配置 master NFS、安装 Calico/NGINX Ingress/Headlamp，并部署 Jenkins、MySQL、前端和后端。Jenkins 启动时会自动创建管理员、Docker Hub 和 MySQL 凭据、Pipeline 以及首次构建。
+
+脚本需要以下参数：Master 和两个 Node 的 SSH 地址、三台机器的内网 IP、SSH 用户、私钥路径、MySQL 密码、Docker Hub Read & Write Token、Jenkins 管理员账号和密码。每一项都在配置文件中提供中文说明与示例。先执行 `--dry-run` 检查参数，再执行正式部署。
+
+填写本地且被 Git 忽略的 `deployment/hosts.env` 和 `deployment/secrets.env` 后，执行：
+
+```bash
+./scripts/deploy.sh --dry-run
+./scripts/deploy.sh
+```
+
+`hosts.env` 保存三台服务器的公网/内网 IP 与 SSH 私钥路径；`secrets.env` 保存 MySQL 密码、Docker Hub Token、Jenkins 管理员信息和 GitHub 仓库地址。脚本不执行 `kubeadm reset`，也不修改云平台安全组。正式执行前需要允许 SSH、Kubernetes API、节点间 Calico、NFS，以及 Master 的 Ingress `30080` 和 Jenkins `30081`。脚本使用 Master 的内网 IP 填充 PV 中的 NFS 地址；Jenkins 依赖 Master 上的 Docker Engine 和 `/var/run/docker.sock`，并使用 ServiceAccount 访问集群而非管理员 kubeconfig。
 
 服务器租赁的明确结论：**现在不必租；等本地前后端和镜像可以运行后，在正式开始 Kubernetes 部署前租三台。**

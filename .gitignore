@@ -4,6 +4,10 @@ node_modules/
 coverage/
 *.log
 
+# Local server addresses and secrets used by scripts/deploy.sh.
+/deployment/hosts.env
+/deployment/secrets.env
+
 # Local reference material, not part of the deployable project.
 k8s_fullstack_assessment_ppt.pptx
 k8s_fullstack_assessment_ppt/
