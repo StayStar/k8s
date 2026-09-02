@@ -1,0 +1,9 @@
+node_modules/
+.env
+.DS_Store
+coverage/
+*.log
+
+# Local reference material, not part of the deployable project.
+k8s_fullstack_assessment_ppt.pptx
+k8s_fullstack_assessment_ppt/

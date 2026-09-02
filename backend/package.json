@@ -1,0 +1,16 @@
+{
+  "name": "k8s-demo-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Minimal CRUD API for the Kubernetes full-stack assessment",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js"
+  },
+  "dependencies": {
+    "express": "4.21.2",
+    "mysql2": "3.12.0"
+  }
+}
+

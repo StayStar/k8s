@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>K8s 全栈演示</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="hero">
+        <p class="eyebrow">KUBERNETES FULL-STACK DEMO</p>
+        <h1>数据记录</h1>
+        <p class="subtitle">通过 Ingress、Service、Pod 和 MySQL 完成一次读写闭环。</p>
+      </header>
+
+      <section class="workspace" aria-label="数据管理">
+        <form id="item-form" class="form-row">
+          <label for="item-name">新增记录</label>
+          <div class="input-group">
+            <input id="item-name" name="name" type="text" maxlength="255" placeholder="输入一条内容" required />
+            <button type="submit">新增</button>
+          </div>
+          <p id="form-message" class="message" role="status"></p>
+        </form>
+
+        <div class="list-header">
+          <div>
+            <p class="eyebrow">PERSISTED ITEMS</p>
+            <h2>记录列表</h2>
+          </div>
+          <button id="refresh-button" class="secondary" type="button">刷新</button>
+        </div>
+
+        <div id="empty-state" class="empty-state">正在加载数据...</div>
+        <ul id="item-list" class="item-list" aria-live="polite"></ul>
+      </section>
+    </main>
+    <script src="/app.js" defer></script>
+  </body>
+</html>
+
