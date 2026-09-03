@@ -42,7 +42,7 @@ esac
 
 load_config "$HOSTS_FILE"
 
-SSH_USER="${SSH_USER-ubuntu}"
+SSH_USER="${SSH_USER-ecs-user}"
 SSH_PORT="${SSH_PORT-22}"
 SSH_KEY="${SSH_KEY-}"
 MASTER_HOST="${MASTER_HOST-}"

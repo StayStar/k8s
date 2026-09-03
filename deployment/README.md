@@ -9,7 +9,7 @@
 | `hosts.env` | Master、Node 01、Node 02 的 SSH 地址和内网 IP，以及 Mac 上的 SSH 私钥路径 |
 | `secrets.env` | 两个 MySQL 密码、Docker Hub Read & Write Token、Jenkins 管理员账号和密码 |
 
-脚本内固定默认值：Docker Hub 用户名 `staystar`、GitHub 仓库地址、Jenkins 任务名、SSH 用户 `ubuntu`、SSH 端口 `22`、时区 `Asia/Shanghai`。题目后续提供 Shared Library 地址时，可以在单次命令前临时设置 `JENKINS_SHARED_LIBRARY_URL` 和 `JENKINS_SHARED_LIBRARY_VERSION`，无需写入 `.env`。
+脚本内固定默认值：Docker Hub 用户名 `staystar`、GitHub 仓库地址、Jenkins 任务名、SSH 用户 `ecs-user`、SSH 端口 `22`、时区 `Asia/Shanghai`。题目后续提供 Shared Library 地址时，可以在单次命令前临时设置 `JENKINS_SHARED_LIBRARY_URL` 和 `JENKINS_SHARED_LIBRARY_VERSION`，无需写入 `.env`。
 
 从项目根目录执行：
 

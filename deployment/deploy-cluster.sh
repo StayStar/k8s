@@ -5,7 +5,7 @@ IFS=$'\n\t'
 SCRIPT_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 
-SSH_USER="${SSH_USER-ubuntu}"
+SSH_USER="${SSH_USER-ecs-user}"
 SSH_PORT="${SSH_PORT-22}"
 SSH_KEY="${SSH_KEY-}"
 TIMEZONE="${TIMEZONE-Asia/Shanghai}"
@@ -47,7 +47,7 @@ Required for a full deployment:
   JENKINS_ADMIN_USER JENKINS_ADMIN_PASSWORD
 
 Defaults:
-  SSH_USER=ubuntu SSH_PORT=22
+  SSH_USER=ecs-user SSH_PORT=22
   TIMEZONE=Asia/Shanghai
   K8S_MINOR=v1.36 POD_CIDR=192.168.0.0/16
   CALICO_VERSION=v3.32.1 INGRESS_NGINX_VERSION=controller-v1.15.1
