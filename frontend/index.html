@@ -3,40 +3,98 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>K8s 全栈演示</title>
+    <title>Kubernetes 数据验收台</title>
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
-    <main class="shell">
-      <header class="hero">
-        <p class="eyebrow">KUBERNETES FULL-STACK DEMO</p>
-        <h1>数据记录</h1>
-        <p class="subtitle">通过 Ingress、Service、Pod 和 MySQL 完成一次读写闭环。</p>
+    <main class="app-shell">
+      <header class="app-header">
+        <div class="brand-block">
+          <p class="brand-kicker">KUBERNETES FULL-STACK DEMO</p>
+          <h1>数据验收工作台</h1>
+          <p class="brand-copy">业务数据通过集群服务写入持久化存储。</p>
+        </div>
+        <div id="api-status" class="api-status" role="status">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="api-status-text">正在连接数据服务</span>
+        </div>
       </header>
 
-      <section class="workspace" aria-label="数据管理">
-        <form id="item-form" class="form-row">
-          <label for="item-name">新增记录</label>
-          <div class="input-group">
-            <input id="item-name" name="name" type="text" maxlength="255" placeholder="输入一条内容" required />
-            <button type="submit">新增</button>
-          </div>
-          <p id="form-message" class="message" role="status"></p>
-        </form>
+      <section class="flow-bar" aria-label="应用运行链路">
+        <span>浏览器</span>
+        <span class="flow-arrow" aria-hidden="true">→</span>
+        <span>Ingress</span>
+        <span class="flow-arrow" aria-hidden="true">→</span>
+        <span>Service</span>
+        <span class="flow-arrow" aria-hidden="true">→</span>
+        <span>Pod</span>
+        <span class="flow-arrow" aria-hidden="true">→</span>
+        <span>MySQL / NFS</span>
+      </section>
 
-        <div class="list-header">
-          <div>
-            <p class="eyebrow">PERSISTED ITEMS</p>
-            <h2>记录列表</h2>
+      <section class="overview" aria-label="数据概览">
+        <article class="metric metric-primary">
+          <p>记录总数</p>
+          <strong id="record-count">--</strong>
+          <span>持久化业务记录</span>
+        </article>
+        <article class="metric">
+          <p>最近同步</p>
+          <strong id="last-updated">--:--</strong>
+          <span>来自数据服务响应</span>
+        </article>
+        <article class="metric">
+          <p>存储位置</p>
+          <strong>MySQL</strong>
+          <span>NFS PVC 持久化</span>
+        </article>
+      </section>
+
+      <section class="workspace" aria-label="数据管理">
+        <div class="entry-panel">
+          <div class="section-heading">
+            <p class="section-kicker">CREATE RECORD</p>
+            <h2>新增一条验收数据</h2>
+            <p>写入后会立即同步到下方记录列表。</p>
           </div>
-          <button id="refresh-button" class="secondary" type="button">刷新</button>
+
+          <form id="item-form" class="item-form">
+            <label for="item-name">记录内容</label>
+            <div class="input-row">
+              <input
+                id="item-name"
+                name="name"
+                type="text"
+                maxlength="255"
+                placeholder="例如：验收演示数据"
+                autocomplete="off"
+                required
+              />
+              <button id="submit-button" type="submit">新增记录</button>
+            </div>
+            <p id="form-message" class="message" role="status"></p>
+          </form>
         </div>
 
-        <div id="empty-state" class="empty-state">正在加载数据...</div>
-        <ul id="item-list" class="item-list" aria-live="polite"></ul>
+        <div class="records-panel">
+          <div class="records-toolbar">
+            <div>
+              <p class="section-kicker">PERSISTED RECORDS</p>
+              <h2>记录列表</h2>
+            </div>
+            <button id="refresh-button" class="refresh-button" type="button">刷新数据</button>
+          </div>
+
+          <div class="table-labels" aria-hidden="true">
+            <span>编号</span>
+            <span>记录内容</span>
+            <span>创建时间</span>
+          </div>
+          <div id="empty-state" class="empty-state">正在加载数据...</div>
+          <ul id="item-list" class="item-list" aria-live="polite"></ul>
+        </div>
       </section>
     </main>
     <script src="/app.js" defer></script>
   </body>
 </html>
-
