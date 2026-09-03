@@ -75,7 +75,7 @@ spec:
         - name: prepare-jenkins-home
           image: staystar/fullstack-jenkins:latest
           imagePullPolicy: Always
-          command: ["sh", "-c", "mkdir -p /var/jenkins_home/.kube"]
+          command: ["sh", "-c", "mkdir -p /var/jenkins_home/.kube && chmod 0777 /var/jenkins_home/.kube"]
           volumeMounts:
             - name: jenkins-home
               mountPath: /var/jenkins_home
