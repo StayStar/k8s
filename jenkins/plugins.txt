@@ -3,3 +3,4 @@ pipeline-model-definition
 git
 credentials-binding
 plain-credentials
+pipeline-groovy-lib

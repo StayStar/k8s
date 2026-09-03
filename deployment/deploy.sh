@@ -3,8 +3,8 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
-HOSTS_FILE="$REPO_ROOT/deployment/hosts.env"
-SECRETS_FILE="$REPO_ROOT/deployment/secrets.env"
+HOSTS_FILE="$SCRIPT_DIR/hosts.env"
+SECRETS_FILE="$SCRIPT_DIR/secrets.env"
 
 die() {
   printf 'ERROR: %s\n' "$*" >&2
@@ -16,8 +16,8 @@ usage() {
 Usage:
   1. Fill deployment/hosts.env. Every field has a Chinese explanation and example.
   2. Fill deployment/secrets.env. Every field has a Chinese explanation and example.
-  3. Run ./scripts/deploy.sh --dry-run to validate the values only.
-  4. Run ./scripts/deploy.sh to provision servers and create the first Jenkins build.
+  3. Run ./deployment/deploy.sh --dry-run to validate the values only.
+  4. Run ./deployment/deploy.sh to provision servers and create the first Jenkins build.
 
 The script creates Jenkins credentials, the Pipeline job, and its first build.
 It writes secret values to Kubernetes Secret resources, never to Git-tracked YAML.
@@ -41,6 +41,7 @@ load_config "$HOSTS_FILE"
 load_config "$SECRETS_FILE"
 
 command -v docker >/dev/null 2>&1 || die "Docker Desktop command not found: docker"
+DOCKERHUB_USERNAME="${DOCKERHUB_USERNAME-staystar}"
 
 if [[ "${1-}" == --dry-run ]]; then
   exec "$SCRIPT_DIR/deploy-cluster.sh" "$@"

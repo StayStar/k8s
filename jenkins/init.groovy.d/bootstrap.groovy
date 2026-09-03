@@ -9,9 +9,13 @@ import hudson.security.FullControlOnceLoggedInAuthorizationStrategy
 import hudson.security.HudsonPrivateSecurityRealm
 import hudson.util.Secret
 import jenkins.model.Jenkins
+import jenkins.plugins.git.GitSCMSource
 import org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl
 import org.jenkinsci.plugins.workflow.cps.CpsScmFlowDefinition
 import org.jenkinsci.plugins.workflow.job.WorkflowJob
+import org.jenkinsci.plugins.workflow.libs.GlobalLibraries
+import org.jenkinsci.plugins.workflow.libs.LibraryConfiguration
+import org.jenkinsci.plugins.workflow.libs.SCMSourceRetriever
 
 def requiredEnvironment = [
   'JENKINS_ADMIN_USER',
@@ -74,6 +78,26 @@ desiredCredentials.each { replacement ->
     credentialStore.updateCredentials(globalDomain, existing, replacement)
   }
 }
+
+def sharedLibraryName = 'assessment-shared-library'
+def sharedLibraryUrl = System.getenv('JENKINS_SHARED_LIBRARY_URL')?.trim()
+def sharedLibraryVersion = System.getenv('JENKINS_SHARED_LIBRARY_VERSION')?.trim() ?: 'main'
+def globalLibraries = GlobalLibraries.get()
+def managedLibraries = globalLibraries.getLibraries().findAll { it.name != sharedLibraryName }
+
+if (sharedLibraryUrl) {
+  if (!sharedLibraryUrl.startsWith('https://')) {
+    throw new IllegalArgumentException('JENKINS_SHARED_LIBRARY_URL must use an HTTPS Git URL')
+  }
+  def source = new GitSCMSource(sharedLibraryName, sharedLibraryUrl, '', '*', '', false)
+  def library = new LibraryConfiguration(sharedLibraryName, new SCMSourceRetriever(source))
+  library.setDefaultVersion(sharedLibraryVersion)
+  library.setImplicit(false)
+  library.setAllowVersionOverride(true)
+  managedLibraries.add(library)
+}
+globalLibraries.setLibraries(managedLibraries)
+globalLibraries.save()
 
 def jobName = System.getenv('JENKINS_JOB_NAME')
 def repositoryUrl = System.getenv('GITHUB_REPOSITORY_URL')

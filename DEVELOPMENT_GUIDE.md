@@ -42,7 +42,7 @@
 | 集群 | kubeadm + 1 master + 2 node | 题目硬性要求 |
 | 集群网络 | Calico | 题目硬性要求 |
 | 对外访问 | Ingress | 统一提供网站入口 |
-| 持久化 | Master 上的 NFS + PV/PVC | 题目硬性要求 |
+| 持久化 | Master 上的 NFS + `nfs-static` StorageClass + 静态 PV/PVC | NFS 由 Master 提供，显式标注静态卷类别 |
 | CI/CD | Jenkins Pipeline | Git 提交后构建、推送并部署 |
 | 可视化 | Headlamp | 提供 Kubernetes 管理页面 |
 | 配置文件 | Kubernetes YAML | 本项目不强制使用 Helm |
@@ -80,8 +80,8 @@ project/
 ```text
 frontend/ → frontend Docker 镜像 → frontend.yaml → frontend Pod
 backend/  → backend Docker 镜像  → backend.yaml  → backend Pod
-MySQL 配置 → mysql.yaml → mysql Pod → PVC → NFS
-Jenkins 配置 → jenkins.yaml → Jenkins Pod → PVC → NFS
+MySQL 配置 → mysql.yaml → mysql Pod → PVC → `nfs-static` StorageClass → NFS
+Jenkins 配置 → jenkins.yaml → Jenkins Pod → PVC → `nfs-static` StorageClass → NFS
 Jenkinsfile → 构建两个镜像 → 推送镜像仓库 → 更新 Kubernetes
 Ingress → frontend Service / backend Service
 backend → mysql Service → MySQL Pod
@@ -218,6 +218,8 @@ Kubernetes 创建新的 Pod
 - 确认三台机器可以通过内网互通。
 - 记录云厂商、地域、系统版本、公网 IP、内网 IP 和开放端口。
 
+`deployment/deploy.sh` 是独立于应用运行的一次性辅助工具，会自动设置三个节点的主机名和时区（默认 `Asia/Shanghai`）。在 `deployment/hosts.env` 填写三台地址和 SSH 私钥路径后，首次部署成功会自动收集节点系统、内核、磁盘、监听端口和 Kubernetes 验收输出到本机 Git 忽略目录 `deployment/evidence/<部署时间>/`。云厂商和地域在最终提交材料中根据租赁订单记录；安全组规则使用 [`deployment/ports.md`](deployment/ports.md)；浏览器截图仍需在真实公网地址打开后截取。
+
 交付证据：
 
 ```text
@@ -239,7 +241,7 @@ Kubernetes 创建新的 Pod
 3. 生成 join 命令，让两个 node 加入。
 4. 安装 Calico。
 5. 安装 Headlamp。
-6. 确认所有节点为 `Ready`，CoreDNS 正常运行。
+6. 确认所有节点为 `Ready`，CoreDNS 正常运行，并验证两个 worker 间的 Calico Pod 网络。
 
 验收命令以题目为准：
 
@@ -258,7 +260,7 @@ kubectl get svc -A
 ```text
 master:/srv/nfs/jenkins
         ↓
-Jenkins PV → Jenkins PVC → Jenkins Pod
+StorageClass nfs-static → Jenkins PV → Jenkins PVC → Jenkins Pod
 ```
 
 Jenkins 必须具备：
@@ -271,7 +273,9 @@ Jenkins 必须具备：
 
 管理员密码、Docker Hub Token 和 MySQL 密码仅填写在被 Git 忽略的 `deployment/secrets.env`。脚本将它们写入 Kubernetes Secret，再由 Jenkins 启动脚本创建加密保存的 Jenkins Credentials；这些值不写入 Git 跟踪的 YAML。
 
-当前未配置 Pipeline Shared Library，因为题目未提供可用 URL。获得有效地址后再单独加入，避免引用不存在的依赖。
+题目后续提供 Shared Library 地址时，可在单次部署命令前临时设置 `JENKINS_SHARED_LIBRARY_URL` 和 `JENKINS_SHARED_LIBRARY_VERSION`。URL 为空时不配置共享库；填写公开 HTTPS Git 地址后，Jenkins 会创建名为 `assessment-shared-library` 的全局库，默认使用指定分支或标签。当前 Pipeline 不依赖该库，因此题目尚未提供地址时不影响首次部署。
+
+Jenkins 和数据库备份使用 `./deployment/backup-nfs.sh --create`：脚本会短暂停止 Jenkins 后归档其 NFS 目录，并使用 `mysqldump --single-transaction` 生成 MySQL 逻辑备份；备份会保留在 Master `/srv/nfs/backups/` 和本机 Git 忽略目录 `deployment/backups/`。恢复操作必须在维护窗口执行，且应先创建当前数据的新备份。
 
 ### 阶段 3：MySQL、Secret 和 PVC
 
@@ -394,15 +398,12 @@ Jenkins 也可以较早部署，但它必须在 Kubernetes 集群和持久化存
 
 按照用户视角、工程实现、持久化和安全的顺序演示：
 
-1. 浏览器打开站点公网 IP 或域名，证明 Ingress 生效。
-2. 新增一条数据，证明前端调用后端并写入数据库。
-3. 刷新或重新查询，证明读取路径正常。
-4. 删除或重启 backend Pod，证明应用可以恢复。
-5. 删除或重启 MySQL Pod，确认数据仍然存在。
-6. 展示 Jenkins 成功构建记录。
-7. 展示 Git 提交、镜像构建、部署结果。
-8. 展示 Ingress、Service、Pod、Secret 和 PVC。
-9. 展示 `kubectl` 验收输出和 Headlamp 页面。
+1. 执行 `./deployment/verify-acceptance.sh --check`。它不修改业务数据、不重启 Pod，验证三节点、Calico、CoreDNS、Ingress NGINX、Headlamp、NFS 存储、Secret、工作负载、Jenkins 最近一次构建和公网 API，并保存安全证据。
+2. 浏览器打开站点公网 IP 或域名，证明 Ingress 生效。
+3. 新增一条数据，证明前端调用后端并写入数据库；刷新页面，证明读取路径正常。
+4. 展示 Jenkins 成功构建记录、Git 提交、镜像构建和部署结果。
+5. 展示 Ingress、Service、Pod、Secret、PV/PVC、StorageClass、`kubectl` 验收输出和 Headlamp 页面。
+6. 执行 `./deployment/verify-acceptance.sh --exercise-recovery`，明确确认后写入一条测试记录，依次删除 backend、MySQL Pod，并验证服务恢复且数据仍存在。
 
 建议准备的命令输出：
 
@@ -418,6 +419,8 @@ kubectl rollout status deployment/backend -n app
 
 展示 Secret 时只能展示 Secret 存在及其引用关系，不要公开密码内容。
 
+现场讲解与 Headlamp 的 SSH 隧道访问方式见 [`deployment/acceptance-demo.md`](deployment/acceptance-demo.md)。
+
 ## 9. 交付清单
 
 ### 9.1 代码和配置
@@ -431,6 +434,7 @@ kubectl rollout status deployment/backend -n app
 [ ] k8s/ YAML 配置
 [ ] jenkins/Dockerfile
 [ ] Jenkins PV/PVC 和 Deployment YAML
+[ ] `k8s/storage-class.yaml`
 [ ] Jenkinsfile
 [ ] README.md
 ```
@@ -445,6 +449,7 @@ kubectl rollout status deployment/backend -n app
 [ ] containerd、Calico、Ingress、Headlamp 版本
 [ ] 开放端口和安全组说明
 [ ] 集群规划说明
+[ ] `deployment/evidence/<部署时间>/` 已生成且不含 Secret 值
 ```
 
 ### 9.3 Jenkins 和部署证据
@@ -545,6 +550,7 @@ README 或提交文档必须包含：
 ```text
 [ ] 三台节点加入 Kubernetes 集群并 Ready
 [ ] Calico 和 CoreDNS 正常
+[ ] `./deployment/backup-nfs.sh --create` 完成，且本机存在下载的备份
 [ ] Headlamp 可访问
 [ ] Jenkins 首页可访问且数据持久化
 [ ] MySQL 使用 Secret 和 PVC
@@ -554,6 +560,8 @@ README 或提交文档必须包含：
 [ ] backend Pod 重启后恢复
 [ ] MySQL Pod 重启后数据不丢失
 [ ] Jenkins 能完成构建、推送和部署
+[ ] `./deployment/verify-acceptance.sh --check` 已成功，并保留本次安全证据
+[ ] `./deployment/verify-acceptance.sh --exercise-recovery` 已成功，并保留 Pod 恢复与数据持久化证据
 [ ] Git 仓库、YAML、Jenkinsfile、截图和 README 齐全
 [ ] 所有敏感凭据未提交到公开仓库
 ```
@@ -565,24 +573,27 @@ README 或提交文档必须包含：
 ```text
 1. 填写 `deployment/hosts.env` 中的三台服务器地址和 SSH 私钥路径。
 2. 填写 `deployment/secrets.env` 中的 MySQL 密码、Docker Hub Token 和 Jenkins 管理员信息。
-3. 执行 `./scripts/deploy.sh --dry-run`。
-4. 执行 `./scripts/deploy.sh`，等待首次 Pipeline 构建成功。
+3. 执行 `./deployment/deploy.sh --dry-run`。
+4. 执行 `./deployment/deploy.sh`，等待首次 Pipeline 构建成功。
 5. 按验收脚本截图并整理提交材料。
+6. 执行 `./deployment/verify-acceptance.sh --check`；演示前再执行 `./deployment/verify-acceptance.sh --exercise-recovery`。
 ```
 
 ### 13.1 一键部署脚本
 
-仓库中的 `scripts/deploy.sh` 可以从 Mac 通过 SSH 自动执行三台 Ubuntu 服务器的部署。它会构建并推送 Jenkins 镜像，设置主机名、安装 containerd 和 Kubernetes、初始化 master、加入两个 worker、配置 master NFS、安装 Calico/NGINX Ingress/Headlamp，并部署 Jenkins、MySQL、前端和后端。Jenkins 启动时会自动创建管理员、Docker Hub 和 MySQL 凭据、Pipeline 以及首次构建。
+仓库中的 `deployment/` 是与应用运行分离的一次性服务器部署工具。`deployment/deploy.sh` 可以从 Mac 通过 SSH 自动执行三台 Ubuntu 服务器的部署：构建并推送 Jenkins 镜像，设置主机名和时区、安装 containerd 和 Kubernetes、初始化 master、加入两个 worker、配置 Master NFS、安装 Calico/NGINX Ingress/Headlamp，并部署 `nfs-static` StorageClass、Jenkins、MySQL、前端和后端。脚本验证 Node Ready、CoreDNS 和跨 Node Calico 连通性后才继续部署应用。Jenkins 启动时会自动创建管理员、Docker Hub 和 MySQL 凭据、Pipeline、可选的全局共享库以及首次构建。
 
-脚本需要以下参数：Master 和两个 Node 的 SSH 地址、三台机器的内网 IP、SSH 用户、私钥路径、MySQL 密码、Docker Hub Read & Write Token、Jenkins 管理员账号和密码。每一项都在配置文件中提供中文说明与示例。先执行 `--dry-run` 检查参数，再执行正式部署。
+脚本需要填写以下值：Master 和两个 Node 的 SSH 地址、三台机器的内网 IP、SSH 私钥路径、MySQL 密码、Docker Hub Read & Write Token、Jenkins 管理员账号和密码。Docker Hub 用户名、GitHub 仓库、Jenkins 任务名、SSH 用户/端口和时区使用默认值。先执行 `--dry-run` 检查参数，再执行正式部署。
 
 填写本地且被 Git 忽略的 `deployment/hosts.env` 和 `deployment/secrets.env` 后，执行：
 
 ```bash
-./scripts/deploy.sh --dry-run
-./scripts/deploy.sh
+./deployment/deploy.sh --dry-run
+./deployment/deploy.sh
 ```
 
-`hosts.env` 保存三台服务器的公网/内网 IP 与 SSH 私钥路径；`secrets.env` 保存 MySQL 密码、Docker Hub Token、Jenkins 管理员信息和 GitHub 仓库地址。脚本不执行 `kubeadm reset`，也不修改云平台安全组。正式执行前需要允许 SSH、Kubernetes API、节点间 Calico、NFS，以及 Master 的 Ingress `30080` 和 Jenkins `30081`。脚本使用 Master 的内网 IP 填充 PV 中的 NFS 地址；Jenkins 依赖 Master 上的 Docker Engine 和 `/var/run/docker.sock`，并使用 ServiceAccount 访问集群而非管理员 kubeconfig。
+`hosts.env` 只保存六个服务器地址和 SSH 私钥路径；`secrets.env` 只保存两个 MySQL 密码、Docker Hub Token、Jenkins 管理员账号和密码。Docker Hub 用户名 `staystar`、GitHub 仓库地址、Jenkins 任务名、SSH 用户/端口和时区都由脚本提供默认值。脚本不执行 `kubeadm reset`，也不修改云平台安全组。正式执行前按照 [`deployment/ports.md`](deployment/ports.md) 允许 SSH、Kubernetes API、节点间 Calico、NFS，以及 Master 的 Ingress `30080` 和 Jenkins `30081`。脚本使用 Master 的内网 IP 填充 PV 中的 NFS 地址；Jenkins 依赖 Master 上的 Docker Engine 和 `/var/run/docker.sock`，并使用 ServiceAccount 访问集群而非管理员 kubeconfig；首个 Jenkins 构建成功后，脚本把验收文本写入 `deployment/evidence/<部署时间>/`，不记录 Secret 值。
+
+部署后 MySQL 密码不能通过再次运行 `deploy.sh` 修改：脚本会拒绝线上 Secret 与本地 `secrets.env` 不一致的情况。先执行 `./deployment/backup-nfs.sh --create`，再编辑 `secrets.env` 并执行 `./deployment/rotate-mysql-password.sh --app`、`--root` 或 `--all`。轮换脚本会按正确顺序修改 MySQL 账号、Kubernetes Secret 和 Jenkins 凭据，并重启 MySQL、后端和 Jenkins，使服务读取新配置。
 
 服务器租赁的明确结论：**现在不必租；等本地前后端和镜像可以运行后，在正式开始 Kubernetes 部署前租三台。**

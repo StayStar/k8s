@@ -43,7 +43,7 @@ pipeline {
           string(credentialsId: 'mysql-app-password', variable: 'MYSQL_PASSWORD')
         ]) {
           sh '''
-            kubectl apply -f k8s/namespace.yaml
+            kubectl apply -f k8s/storage-class.yaml -f k8s/namespace.yaml
             kubectl -n app create secret generic mysql-secret \\
               --from-literal=MYSQL_ROOT_PASSWORD="$MYSQL_ROOT_PASSWORD" \\
               --from-literal=MYSQL_DATABASE=appdb \\

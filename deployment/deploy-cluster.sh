@@ -8,6 +8,7 @@ REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 SSH_USER="${SSH_USER-ubuntu}"
 SSH_PORT="${SSH_PORT-22}"
 SSH_KEY="${SSH_KEY-}"
+TIMEZONE="${TIMEZONE-Asia/Shanghai}"
 MASTER_HOST="${MASTER_HOST-}"
 MASTER_PRIVATE_IP="${MASTER_PRIVATE_IP-}"
 NODE01_HOST="${NODE01_HOST-}"
@@ -33,6 +34,7 @@ JENKINS_ADMIN_PASSWORD="${JENKINS_ADMIN_PASSWORD-}"
 GITHUB_REPOSITORY_URL="${GITHUB_REPOSITORY_URL-https://github.com/StayStar/k8s.git}"
 JENKINS_JOB_NAME="${JENKINS_JOB_NAME-fullstack-pipeline}"
 DRY_RUN=0
+EVIDENCE_DIR=""
 
 usage() {
   cat <<'USAGE'
@@ -41,11 +43,12 @@ Usage:
 
 Required for a full deployment:
   MASTER_HOST MASTER_PRIVATE_IP NODE01_HOST NODE01_PRIVATE_IP NODE02_HOST NODE02_PRIVATE_IP
-  MYSQL_ROOT_PASSWORD MYSQL_PASSWORD DOCKERHUB_USERNAME DOCKERHUB_TOKEN
-  JENKINS_ADMIN_USER JENKINS_ADMIN_PASSWORD GITHUB_REPOSITORY_URL JENKINS_JOB_NAME
+  SSH_KEY MYSQL_ROOT_PASSWORD MYSQL_PASSWORD DOCKERHUB_TOKEN
+  JENKINS_ADMIN_USER JENKINS_ADMIN_PASSWORD
 
 Defaults:
-  SSH_USER=ubuntu SSH_PORT=22 SSH_KEY=~/.ssh/id_ed25519
+  SSH_USER=ubuntu SSH_PORT=22
+  TIMEZONE=Asia/Shanghai
   K8S_MINOR=v1.36 POD_CIDR=192.168.0.0/16
   CALICO_VERSION=v3.32.1 INGRESS_NGINX_VERSION=controller-v1.15.1
   HEADLAMP_VERSION=v0.44.0 INSTALL_HEADLAMP=1
@@ -58,7 +61,7 @@ Example:
   MASTER_HOST=203.0.113.10 MASTER_PRIVATE_IP=10.0.0.10 \
   NODE01_HOST=203.0.113.11 NODE01_PRIVATE_IP=10.0.0.11 \
   NODE02_HOST=203.0.113.12 NODE02_PRIVATE_IP=10.0.0.12 \
-  SSH_KEY=~/.ssh/id_ed25519 ./scripts/deploy-cluster.sh
+  SSH_KEY=~/.ssh/id_ed25519 ./deployment/deploy-cluster.sh
 USAGE
 }
 
@@ -108,6 +111,7 @@ validate_host NODE02_HOST "$NODE02_HOST"
 validate_host NODE02_PRIVATE_IP "$NODE02_PRIVATE_IP"
 
 [[ "$SSH_PORT" =~ ^[0-9]+$ ]] || die "SSH_PORT must be numeric"
+[[ "$TIMEZONE" == UTC || "$TIMEZONE" =~ ^[A-Za-z0-9_.+-]+(/[A-Za-z0-9_.+-]+)+$ ]] || die "TIMEZONE must look like Asia/Shanghai or UTC"
 [[ "$K8S_MINOR" =~ ^v[0-9]+\.[0-9]+$ ]] || die "K8S_MINOR must look like v1.36"
 [[ "$CALICO_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "CALICO_VERSION must look like v3.32.1"
 [[ "$INGRESS_NGINX_VERSION" =~ ^controller-v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "INGRESS_NGINX_VERSION must look like controller-v1.15.1"
@@ -116,9 +120,8 @@ validate_host NODE02_PRIVATE_IP "$NODE02_PRIVATE_IP"
 [[ "$JENKINS_JOB_NAME" =~ ^[a-z0-9][a-z0-9-]*$ ]] || die "JENKINS_JOB_NAME must contain lowercase letters, digits, and hyphens only"
 [[ "$GITHUB_REPOSITORY_URL" =~ ^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git$ ]] || die "GITHUB_REPOSITORY_URL must look like https://github.com/owner/repository.git"
 
-if [[ -n "$SSH_KEY" ]]; then
-  [[ -f "$SSH_KEY" ]] || die "SSH_KEY does not exist: $SSH_KEY"
-fi
+[[ -n "$SSH_KEY" ]] || die "SSH_KEY must not be empty"
+[[ -f "$SSH_KEY" ]] || die "SSH_KEY does not exist: $SSH_KEY"
 [[ -n "$MYSQL_ROOT_PASSWORD" ]] || die "MYSQL_ROOT_PASSWORD must not be empty"
 [[ -n "$MYSQL_PASSWORD" ]] || die "MYSQL_PASSWORD must not be empty"
 [[ -n "$DOCKERHUB_USERNAME" ]] || die "DOCKERHUB_USERNAME must not be empty"
@@ -165,16 +168,18 @@ prepare_node() {
   local install_docker=$3
 
   log "Preparing $node_name ($host)"
-  ssh_root_script "$host" "$node_name" "$install_docker" "$K8S_MINOR" "$SSH_USER" <<'REMOTE'
+  ssh_root_script "$host" "$node_name" "$install_docker" "$K8S_MINOR" "$SSH_USER" "$TIMEZONE" <<'REMOTE'
 set -Eeuo pipefail
 node_name="$1"
 install_docker="$2"
 k8s_minor="$3"
 ssh_user="$4"
+timezone="$5"
 
 if [[ "$(hostname)" != "$node_name" ]]; then
   hostnamectl set-hostname "$node_name"
 fi
+timedatectl set-timezone "$timezone"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
@@ -298,6 +303,8 @@ install_addons() {
 
   log "Installing NGINX Ingress Controller"
   ssh_root_command "$MASTER_HOST" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/$INGRESS_NGINX_VERSION/deploy/static/provider/baremetal/deploy.yaml"
+  ssh_root_command "$MASTER_HOST" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n ingress-nginx patch service ingress-nginx-controller --type=strategic --patch '{\"spec\":{\"ports\":[{\"name\":\"http\",\"port\":80,\"nodePort\":30080}]}}'"
+  ssh_root_command "$MASTER_HOST" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n ingress-nginx get service ingress-nginx-controller -o jsonpath='{.spec.ports[?(@.name==\"http\")].nodePort}' | grep -qx 30080"
 
   if [[ "$INSTALL_HEADLAMP" == 1 ]]; then
     log "Installing Headlamp"
@@ -305,11 +312,71 @@ install_addons() {
   fi
 }
 
+verify_cluster() {
+  log "Verifying Kubernetes acceptance conditions"
+  ssh_root_command "$MASTER_HOST" 'KUBECONFIG=/etc/kubernetes/admin.conf kubectl wait --for=condition=Ready node/master node/node-01 node/node-02 --timeout=300s'
+  ssh_root_command "$MASTER_HOST" 'KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n kube-system rollout status deployment/coredns --timeout=300s'
+
+  log "Verifying cross-node Calico connectivity"
+  ssh_root_script "$MASTER_HOST" <<'REMOTE'
+set -Eeuo pipefail
+export KUBECONFIG=/etc/kubernetes/admin.conf
+
+cleanup() {
+  kubectl -n kube-system delete pod cni-check-node-01 cni-check-node-02 --ignore-not-found >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+cat <<'MANIFEST' | kubectl apply -f -
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cni-check-node-01
+  namespace: kube-system
+  labels:
+    app: cni-check
+spec:
+  nodeName: node-01
+  restartPolicy: Never
+  containers:
+    - name: check
+      image: busybox:1.36.1
+      command: ["sh", "-c", "sleep 300"]
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cni-check-node-02
+  namespace: kube-system
+  labels:
+    app: cni-check
+spec:
+  nodeName: node-02
+  restartPolicy: Never
+  containers:
+    - name: check
+      image: busybox:1.36.1
+      command: ["sh", "-c", "sleep 300"]
+MANIFEST
+
+kubectl -n kube-system wait --for=condition=Ready pod/cni-check-node-01 pod/cni-check-node-02 --timeout=300s
+node02_ip="$(kubectl -n kube-system get pod cni-check-node-02 -o jsonpath='{.status.podIP}')"
+[[ -n "$node02_ip" ]] || { echo 'CNI connectivity check pod has no IP address' >&2; exit 1; }
+kubectl -n kube-system exec cni-check-node-01 -- ping -c 3 -W 2 "$node02_ip"
+REMOTE
+
+  log "Kubernetes acceptance output"
+  ssh_root_command "$MASTER_HOST" 'KUBECONFIG=/etc/kubernetes/admin.conf kubectl get nodes -o wide'
+  ssh_root_command "$MASTER_HOST" 'KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -A'
+  ssh_root_command "$MASTER_HOST" 'KUBECONFIG=/etc/kubernetes/admin.conf kubectl get svc -A'
+}
+
 copy_manifests() {
   log "Copying Kubernetes manifests to master"
   REMOTE_K8S_DIR="$(ssh_command "$MASTER_HOST" 'mktemp -d /tmp/k8s-fullstack.XXXXXX')"
   scp $SCP_OPTS \
     "$REPO_ROOT/k8s/namespace.yaml" \
+    "$REPO_ROOT/k8s/storage-class.yaml" \
     "$REPO_ROOT/k8s/mysql-pv-pvc.yaml" \
     "$REPO_ROOT/k8s/mysql.yaml" \
     "$REPO_ROOT/k8s/backend.yaml" \
@@ -333,6 +400,16 @@ apply_secret() {
   app_password_encoded="$(printf '%s' "$MYSQL_PASSWORD" | base64 | tr -d '\n')"
   database_encoded="$(printf '%s' "$MYSQL_DATABASE" | base64 | tr -d '\n')"
   user_encoded="$(printf '%s' "$MYSQL_USER" | base64 | tr -d '\n')"
+
+  local current_root_password_encoded
+  local current_app_password_encoded
+  current_root_password_encoded="$(ssh_root_command "$MASTER_HOST" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n app get secret mysql-secret -o jsonpath='{.data.MYSQL_ROOT_PASSWORD}'" 2>/dev/null || true)"
+  current_app_password_encoded="$(ssh_root_command "$MASTER_HOST" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n app get secret mysql-secret -o jsonpath='{.data.MYSQL_PASSWORD}'" 2>/dev/null || true)"
+
+  if [[ -n "$current_root_password_encoded$current_app_password_encoded" ]] \
+    && [[ "$current_root_password_encoded" != "$root_password_encoded" || "$current_app_password_encoded" != "$app_password_encoded" ]]; then
+    die "MySQL passwords in deployment/secrets.env differ from the running cluster. Use ./deployment/rotate-mysql-password.sh instead of a normal deployment."
+  fi
 
   local manifest
   manifest="$(cat <<EOF
@@ -374,6 +451,8 @@ data:
   MYSQL_PASSWORD: $(encode_secret_value "$MYSQL_PASSWORD")
   GITHUB_REPOSITORY_URL: $(encode_secret_value "$GITHUB_REPOSITORY_URL")
   JENKINS_JOB_NAME: $(encode_secret_value "$JENKINS_JOB_NAME")
+  JENKINS_SHARED_LIBRARY_URL: "$(encode_secret_value "${JENKINS_SHARED_LIBRARY_URL-}")"
+  JENKINS_SHARED_LIBRARY_VERSION: "$(encode_secret_value "${JENKINS_SHARED_LIBRARY_VERSION-main}")"
 EOF
 }
 
@@ -389,7 +468,7 @@ deploy_resources() {
   docker_gid="$(ssh_root_command "$MASTER_HOST" "getent group docker | cut -d: -f3")"
   [[ "$docker_gid" =~ ^[0-9]+$ ]] || die "Could not determine the host docker group ID"
   ssh_root_command "$MASTER_HOST" "sed -i 's/REPLACE_WITH_DOCKER_GID/$docker_gid/g' $REMOTE_K8S_DIR/jenkins.yaml"
-  ssh_root_command "$MASTER_HOST" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f $REMOTE_K8S_DIR/namespace.yaml"
+  ssh_root_command "$MASTER_HOST" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f $REMOTE_K8S_DIR/storage-class.yaml -f $REMOTE_K8S_DIR/namespace.yaml"
   ssh_root_command "$MASTER_HOST" 'KUBECONFIG=/etc/kubernetes/admin.conf kubectl create namespace jenkins --dry-run=client -o yaml | kubectl apply -f -'
   apply_secret
   apply_jenkins_bootstrap_secret
@@ -423,6 +502,47 @@ wait_for_jenkins_build() {
   die "Timed out waiting for Jenkins first Pipeline build; inspect http://$MASTER_HOST:30081/job/$JENKINS_JOB_NAME/"
 }
 
+collect_node_evidence() {
+  local role=$1
+  local host=$2
+  local output_file=$3
+
+  ssh_root_command "$host" 'hostnamectl status; printf "\n--- timezone ---\n"; timedatectl status; printf "\n--- kernel ---\n"; uname -a; printf "\n--- disk ---\n"; df -h; printf "\n--- network addresses ---\n"; ip -br address; printf "\n--- listening TCP ports ---\n"; ss -lnt' >"$output_file"
+  log "Collected $role evidence: $output_file"
+}
+
+collect_assessment_evidence() {
+  local timestamp
+  timestamp="$(date +%Y%m%d-%H%M%S)"
+  EVIDENCE_DIR="$REPO_ROOT/deployment/evidence/$timestamp"
+  mkdir -p "$EVIDENCE_DIR"
+
+  cat >"$EVIDENCE_DIR/servers.txt" <<EOF
+timezone=$TIMEZONE
+master_ssh_host=$MASTER_HOST
+master_private_ip=$MASTER_PRIVATE_IP
+node_01_ssh_host=$NODE01_HOST
+node_01_private_ip=$NODE01_PRIVATE_IP
+node_02_ssh_host=$NODE02_HOST
+node_02_private_ip=$NODE02_PRIVATE_IP
+EOF
+
+  log "Collecting assessment evidence"
+  collect_node_evidence master "$MASTER_HOST" "$EVIDENCE_DIR/master-system.txt"
+  collect_node_evidence node-01 "$NODE01_HOST" "$EVIDENCE_DIR/node-01-system.txt"
+  collect_node_evidence node-02 "$NODE02_HOST" "$EVIDENCE_DIR/node-02-system.txt"
+  ssh_root_command "$MASTER_HOST" 'KUBECONFIG=/etc/kubernetes/admin.conf kubectl get nodes -o wide' >"$EVIDENCE_DIR/kubectl-nodes.txt"
+  ssh_root_command "$MASTER_HOST" 'KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pods -A' >"$EVIDENCE_DIR/kubectl-pods.txt"
+  ssh_root_command "$MASTER_HOST" 'KUBECONFIG=/etc/kubernetes/admin.conf kubectl get svc -A' >"$EVIDENCE_DIR/kubectl-services.txt"
+  ssh_root_command "$MASTER_HOST" 'KUBECONFIG=/etc/kubernetes/admin.conf kubectl get ingress -A' >"$EVIDENCE_DIR/kubectl-ingress.txt"
+  ssh_root_command "$MASTER_HOST" 'KUBECONFIG=/etc/kubernetes/admin.conf kubectl get pvc -A' >"$EVIDENCE_DIR/kubectl-pvcs.txt"
+  ssh_root_command "$MASTER_HOST" 'KUBECONFIG=/etc/kubernetes/admin.conf kubectl get storageclass' >"$EVIDENCE_DIR/kubectl-storageclasses.txt"
+  ssh_root_command "$MASTER_HOST" 'KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n app get secret mysql-secret' >"$EVIDENCE_DIR/kubectl-mysql-secret.txt"
+  ssh_root_command "$MASTER_HOST" 'KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n jenkins get secret jenkins-bootstrap' >"$EVIDENCE_DIR/kubectl-jenkins-secret.txt"
+  cp "$REPO_ROOT/deployment/ports.md" "$EVIDENCE_DIR/ports.md"
+  log "Assessment evidence saved to $EVIDENCE_DIR"
+}
+
 print_plan() {
   cat <<PLAN
 Deployment plan:
@@ -433,6 +553,7 @@ Deployment plan:
   node-02 SSH:       $SSH_USER@$NODE02_HOST:$SSH_PORT
   node-02 private:   $NODE02_PRIVATE_IP
   Kubernetes minor:  $K8S_MINOR
+  Timezone:          $TIMEZONE
   Calico:            $CALICO_VERSION
   Ingress:           $INGRESS_NGINX_VERSION
   Headlamp version:  $HEADLAMP_VERSION
@@ -457,8 +578,10 @@ join_worker "$NODE01_HOST" node-01
 join_worker "$NODE02_HOST" node-02
 configure_nfs
 install_addons
+verify_cluster
 deploy_resources
 wait_for_jenkins_build
+collect_assessment_evidence
 
 log "Deployment complete"
 cat <<SUMMARY
@@ -471,5 +594,5 @@ Jenkins Pipeline:      $JENKINS_JOB_NAME
 Jenkins first build:   succeeded
 
 Next step:
-  Capture the kubectl output and browser screenshots required by the assessment.
+  Review $EVIDENCE_DIR and capture browser screenshots required by the assessment.
 SUMMARY
