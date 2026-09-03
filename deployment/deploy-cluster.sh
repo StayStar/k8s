@@ -338,12 +338,10 @@ apt_with_retry install -y nfs-kernel-server
 install -d -m 0777 /srv/nfs/mysql /srv/nfs/jenkins
 touch /etc/exports
 
-# MySQL and Jenkins initialize their data directories as root before dropping
-# privileges. Limit no_root_squash to the three cluster nodes only.
-sed -i '\|^/srv/nfs/mysql |d; \|^/srv/nfs/jenkins |d' /etc/exports
 for path in /srv/nfs/mysql /srv/nfs/jenkins; do
   for ip in "$master_ip" "$node01_ip" "$node02_ip"; do
-    printf '%s\n' "$path $ip(rw,sync,no_subtree_check,no_root_squash)" >>/etc/exports
+    line="$path $ip(rw,sync,no_subtree_check)"
+    grep -Fqx "$line" /etc/exports || printf '%s\n' "$line" >>/etc/exports
   done
 done
 

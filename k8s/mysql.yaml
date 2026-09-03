@@ -16,6 +16,13 @@ spec:
       containers:
         - name: mysql
           image: mysql:8.4
+          # The official image uses the mysql account (UID/GID 999). Running
+          # as that account works with the default, root-squashed NFS export.
+          securityContext:
+            runAsUser: 999
+            runAsGroup: 999
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
           ports:
             - name: mysql
               containerPort: 3306
@@ -57,4 +64,3 @@ spec:
     - name: mysql
       port: 3306
       targetPort: 3306
-
