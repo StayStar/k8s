@@ -130,29 +130,39 @@ validate_host NODE02_PRIVATE_IP "$NODE02_PRIVATE_IP"
 [[ -n "$JENKINS_ADMIN_PASSWORD" ]] || die "JENKINS_ADMIN_PASSWORD must not be empty"
 [[ "$DOCKERHUB_USERNAME" == staystar ]] || die "DOCKERHUB_USERNAME must be staystar for this repository's image names"
 
-SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -p $SSH_PORT"
-SCP_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -P $SSH_PORT"
+SSH_OPTS=(
+  -o BatchMode=yes
+  -o StrictHostKeyChecking=accept-new
+  -o ConnectTimeout=15
+  -p "$SSH_PORT"
+)
+SCP_OPTS=(
+  -o BatchMode=yes
+  -o StrictHostKeyChecking=accept-new
+  -o ConnectTimeout=15
+  -P "$SSH_PORT"
+)
 if [[ -n "$SSH_KEY" ]]; then
-  SSH_OPTS="$SSH_OPTS -i $SSH_KEY"
-  SCP_OPTS="$SCP_OPTS -i $SSH_KEY"
+  SSH_OPTS+=( -i "$SSH_KEY" )
+  SCP_OPTS+=( -i "$SSH_KEY" )
 fi
 
 ssh_command() {
   local host=$1
   shift
-  ssh $SSH_OPTS "$SSH_USER@$host" "$@"
+  ssh "${SSH_OPTS[@]}" "$SSH_USER@$host" "$@"
 }
 
 ssh_root_command() {
   local host=$1
   local command=$2
-  ssh $SSH_OPTS "$SSH_USER@$host" "sudo -n bash -lc $(printf '%q' "$command")"
+  ssh "${SSH_OPTS[@]}" "$SSH_USER@$host" "sudo -n bash -lc $(printf '%q' "$command")"
 }
 
 ssh_root_script() {
   local host=$1
   shift
-  ssh $SSH_OPTS "$SSH_USER@$host" sudo -n bash -s -- "$@"
+  ssh "${SSH_OPTS[@]}" "$SSH_USER@$host" sudo -n bash -s -- "$@"
 }
 
 check_ssh() {
@@ -374,7 +384,7 @@ REMOTE
 copy_manifests() {
   log "Copying Kubernetes manifests to master"
   REMOTE_K8S_DIR="$(ssh_command "$MASTER_HOST" 'mktemp -d /tmp/k8s-fullstack.XXXXXX')"
-  scp $SCP_OPTS \
+  scp "${SCP_OPTS[@]}" \
     "$REPO_ROOT/k8s/namespace.yaml" \
     "$REPO_ROOT/k8s/storage-class.yaml" \
     "$REPO_ROOT/k8s/mysql-pv-pvc.yaml" \
@@ -427,7 +437,7 @@ data:
 EOF
 )"
   printf '%s\n' "$manifest" \
-    | ssh $SSH_OPTS "$SSH_USER@$MASTER_HOST" 'sudo -n env KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -' >/dev/null
+    | ssh "${SSH_OPTS[@]}" "$SSH_USER@$MASTER_HOST" 'sudo -n env KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -' >/dev/null
 }
 
 encode_secret_value() {
@@ -459,7 +469,7 @@ EOF
 apply_jenkins_bootstrap_secret() {
   log "Applying Jenkins bootstrap Secret"
   jenkins_bootstrap_manifest \
-    | ssh $SSH_OPTS "$SSH_USER@$MASTER_HOST" 'sudo -n env KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -' >/dev/null
+    | ssh "${SSH_OPTS[@]}" "$SSH_USER@$MASTER_HOST" 'sudo -n env KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f -' >/dev/null
 }
 
 deploy_resources() {

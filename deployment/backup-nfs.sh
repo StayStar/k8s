@@ -52,20 +52,30 @@ MASTER_HOST="${MASTER_HOST-}"
 [[ -n "$SSH_KEY" ]] || die "SSH_KEY must not be empty"
 [[ -f "$SSH_KEY" ]] || die "SSH_KEY does not exist: $SSH_KEY"
 
-SSH_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -p $SSH_PORT"
-SCP_OPTS="-o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -P $SSH_PORT"
+SSH_OPTS=(
+  -o BatchMode=yes
+  -o StrictHostKeyChecking=accept-new
+  -o ConnectTimeout=15
+  -p "$SSH_PORT"
+)
+SCP_OPTS=(
+  -o BatchMode=yes
+  -o StrictHostKeyChecking=accept-new
+  -o ConnectTimeout=15
+  -P "$SSH_PORT"
+)
 if [[ -n "$SSH_KEY" ]]; then
-  SSH_OPTS="$SSH_OPTS -i $SSH_KEY"
-  SCP_OPTS="$SCP_OPTS -i $SSH_KEY"
+  SSH_OPTS+=( -i "$SSH_KEY" )
+  SCP_OPTS+=( -i "$SSH_KEY" )
 fi
 
 ssh_root_command() {
   local command=$1
-  ssh $SSH_OPTS "$SSH_USER@$MASTER_HOST" "sudo -n bash -lc $(printf '%q' "$command")"
+  ssh "${SSH_OPTS[@]}" "$SSH_USER@$MASTER_HOST" "sudo -n bash -lc $(printf '%q' "$command")"
 }
 
 ssh_root_script() {
-  ssh $SSH_OPTS "$SSH_USER@$MASTER_HOST" sudo -n bash -s -- "$@"
+  ssh "${SSH_OPTS[@]}" "$SSH_USER@$MASTER_HOST" sudo -n bash -s -- "$@"
 }
 
 if [[ "$MODE" == --list ]]; then
@@ -116,5 +126,5 @@ chown -R "$ssh_user:$ssh_user" "$backup_dir"
 REMOTE
 
 printf '==> Downloading backup to %s\n' "$LOCAL_BACKUP_DIR"
-scp $SCP_OPTS -r "$SSH_USER@$MASTER_HOST:$remote_backup_dir" "$LOCAL_BACKUP_DIR/"
+scp "${SCP_OPTS[@]}" -r "$SSH_USER@$MASTER_HOST:$remote_backup_dir" "$LOCAL_BACKUP_DIR/"
 printf 'Backup complete: %s/%s\n' "$LOCAL_BACKUP_DIR" "$backup_name"
