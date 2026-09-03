@@ -50,7 +50,9 @@ pipeline {
               --from-literal=MYSQL_USER=app \\
               --from-literal=MYSQL_PASSWORD="$MYSQL_PASSWORD" \\
               --dry-run=client -o yaml | kubectl apply -f -
-            kubectl apply -f k8s/mysql-pv-pvc.yaml -f k8s/mysql.yaml
+            # Static NFS PV/PVCs are created during cluster bootstrap. They
+            # must not be reapplied from this Pipeline because a PV source is immutable.
+            kubectl apply -f k8s/mysql.yaml
             kubectl apply -f k8s/backend.yaml -f k8s/frontend.yaml -f k8s/ingress.yaml
             kubectl -n app set image deployment/backend backend="$DOCKERHUB_NAMESPACE/fullstack-backend:$IMAGE_TAG"
             kubectl -n app set image deployment/frontend frontend="$DOCKERHUB_NAMESPACE/fullstack-frontend:$IMAGE_TAG"
