@@ -134,6 +134,8 @@ SSH_OPTS=(
   -o BatchMode=yes
   -o StrictHostKeyChecking=accept-new
   -o ConnectTimeout=15
+  -o ServerAliveInterval=20
+  -o ServerAliveCountMax=15
   -p "$SSH_PORT"
 )
 SCP_OPTS=(
@@ -260,7 +262,7 @@ init_master() {
     return
   fi
 
-  ssh_root_script "$MASTER_HOST" "$MASTER_PRIVATE_IP" "$POD_CIDR" "$SSH_USER" <<'REMOTE'
+  if ssh_root_script "$MASTER_HOST" "$MASTER_PRIVATE_IP" "$POD_CIDR" "$SSH_USER" <<'REMOTE'
 set -Eeuo pipefail
 master_ip="$1"
 pod_cidr="$2"
@@ -278,6 +280,16 @@ if [[ "$ssh_user" != root ]] && id "$ssh_user" >/dev/null 2>&1; then
   chown -R "$ssh_user:$ssh_user" "/home/$ssh_user/.kube"
 fi
 REMOTE
+  then
+    return
+  fi
+
+  if ssh_root_command "$MASTER_HOST" 'test -f /etc/kubernetes/admin.conf'; then
+    warn "SSH disconnected after kubeadm init completed; continuing with the existing control plane"
+    return
+  fi
+
+  die "kubeadm init did not complete; inspect the master before retrying"
 }
 
 join_worker() {
