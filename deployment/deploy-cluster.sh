@@ -192,8 +192,25 @@ fi
 timedatectl set-timezone "$timezone"
 
 export DEBIAN_FRONTEND=noninteractive
-apt-get update
-apt-get install -y apt-transport-https ca-certificates curl gpg containerd nfs-common
+
+# Fresh Ubuntu instances can briefly hold the dpkg lock for unattended updates.
+apt_with_retry() {
+  local attempt=1
+  local max_attempts=20
+
+  until apt-get "$@"; do
+    if (( attempt >= max_attempts )); then
+      printf 'apt-get %s failed after %d attempts\n' "$*" "$max_attempts" >&2
+      return 1
+    fi
+    printf 'apt is busy or unavailable; retrying in 15 seconds (%d/%d)\n' "$attempt" "$max_attempts" >&2
+    attempt=$((attempt + 1))
+    sleep 15
+  done
+}
+
+apt_with_retry update
+apt_with_retry install -y apt-transport-https ca-certificates curl gpg containerd nfs-common
 
 swapoff -a
 sed -ri '/[[:space:]]swap[[:space:]]/ s/^/#/' /etc/fstab
@@ -223,13 +240,13 @@ curl -fsSL "https://pkgs.k8s.io/core:/stable:/$k8s_minor/deb/Release.key" \
 chmod 0644 /etc/apt/keyrings/kubernetes-apt-keyring.gpg
 printf 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/%s/deb/ /\n' "$k8s_minor" \
   >/etc/apt/sources.list.d/kubernetes.list
-apt-get update
-apt-get install -y kubelet kubeadm kubectl
+apt_with_retry update
+apt_with_retry install -y kubelet kubeadm kubectl
 apt-mark hold kubelet kubeadm kubectl
 systemctl enable kubelet
 
 if [[ "$install_docker" == yes ]]; then
-  apt-get install -y docker.io
+  apt_with_retry install -y docker.io
   systemctl enable --now docker
   usermod -aG docker "$ssh_user" || true
 fi
@@ -290,7 +307,22 @@ node01_ip="$2"
 node02_ip="$3"
 
 export DEBIAN_FRONTEND=noninteractive
-apt-get install -y nfs-kernel-server
+apt_with_retry() {
+  local attempt=1
+  local max_attempts=20
+
+  until apt-get "$@"; do
+    if (( attempt >= max_attempts )); then
+      printf 'apt-get %s failed after %d attempts\n' "$*" "$max_attempts" >&2
+      return 1
+    fi
+    printf 'apt is busy or unavailable; retrying in 15 seconds (%d/%d)\n' "$attempt" "$max_attempts" >&2
+    attempt=$((attempt + 1))
+    sleep 15
+  done
+}
+
+apt_with_retry install -y nfs-kernel-server
 install -d -m 0777 /srv/nfs/mysql /srv/nfs/jenkins
 touch /etc/exports
 
