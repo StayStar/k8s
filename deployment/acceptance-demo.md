@@ -28,11 +28,18 @@
 Headlamp 不需要暴露到公网。打开一个单独终端并保持运行：
 
 ```bash
-ssh -i '/Mac上的私钥路径.pem' -L 4466:127.0.0.1:4466 ubuntu@Master公网IP \
+ssh -i '/Mac上的私钥路径.pem' -L 4466:127.0.0.1:4466 SSH用户@Master公网IP \
   'sudo -n env KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n kube-system port-forward service/headlamp 4466:80'
 ```
 
-然后在 Mac 浏览器打开 `http://127.0.0.1:4466`。需要时使用 Kubernetes ServiceAccount Token 登录；展示完成后按 `Ctrl+C` 关闭该 SSH 通道。
+然后在 Mac 浏览器打开 `http://127.0.0.1:4466`。使用以下命令生成只读登录 Token，复制输出的整段内容到 Headlamp 登录页；不要保存或提交这个 Token：
+
+```bash
+ssh -i '/Mac上的私钥路径.pem' SSH用户@Master公网IP \
+  'sudo -n env KUBECONFIG=/etc/kubernetes/admin.conf kubectl -n kube-system create token headlamp-viewer'
+```
+
+该 Token 能查看节点、工作负载、网络和存储资源，不能读取 Kubernetes Secret，也不能修改集群。展示完成后按 `Ctrl+C` 关闭 SSH 通道。
 
 PPT 对应关系：
 

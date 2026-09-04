@@ -436,6 +436,7 @@ copy_manifests() {
     "$REPO_ROOT/k8s/backend.yaml" \
     "$REPO_ROOT/k8s/frontend.yaml" \
     "$REPO_ROOT/k8s/ingress.yaml" \
+    "$REPO_ROOT/k8s/headlamp-rbac.yaml" \
     "$REPO_ROOT/k8s/jenkins.yaml" \
     "$REPO_ROOT/k8s/jenkins-kubeconfig.yaml" \
     "$REPO_ROOT/k8s/jenkins-pv-pvc.yaml" \
@@ -524,6 +525,9 @@ deploy_resources() {
   ssh_root_command "$MASTER_HOST" "sed -i 's/REPLACE_WITH_DOCKER_GID/$docker_gid/g' $REMOTE_K8S_DIR/jenkins.yaml"
   ssh_root_command "$MASTER_HOST" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f $REMOTE_K8S_DIR/storage-class.yaml -f $REMOTE_K8S_DIR/namespace.yaml"
   ssh_root_command "$MASTER_HOST" 'KUBECONFIG=/etc/kubernetes/admin.conf kubectl create namespace jenkins --dry-run=client -o yaml | kubectl apply -f -'
+  if [[ "$INSTALL_HEADLAMP" == 1 ]]; then
+    ssh_root_command "$MASTER_HOST" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f $REMOTE_K8S_DIR/headlamp-rbac.yaml"
+  fi
   apply_secret
   apply_jenkins_bootstrap_secret
   ssh_root_command "$MASTER_HOST" "KUBECONFIG=/etc/kubernetes/admin.conf kubectl apply -f $REMOTE_K8S_DIR/jenkins-kubeconfig.yaml"
